@@ -77,9 +77,21 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+  // printf("begin -> a0: %d\n", p->trapframe->a0);
+    // alarm
+    if(p->alarm_interval > 0 && --p->ticks_count <= 0 && p->is_alarming == 0) {
+      // p->ticks_count = p->alarm_interval;
+      // printf("p->alarm_interval = %d", p->alarm_interval);
+      // 保存寄存器内容
+      memmove(p->alarm_trapframe, p->trapframe, sizeof(struct trapframe));
+      // 要在保存寄存器内容后再设置epc
+      p->trapframe->epc = (uint64)p->alarm_handler;
+      p->is_alarming = 1;
+    }
     yield();
-
+  // printf("end -> a0: %d\n", p->trapframe->a0);
+  }
   usertrapret();
 }
 
@@ -219,3 +231,20 @@ devintr()
   }
 }
 
+
+int sigalarm(int ticks, void(*handler)()) {
+  // 设置 myproc 中的相关属性
+  struct proc *p = myproc();
+  p->alarm_interval = ticks;
+  p->alarm_handler = handler;
+  p->ticks_count = ticks;
+  return 0;
+}
+
+int sigreturn() {
+  // 将 trapframe 恢复到时钟中断之前的状态，恢复原本正在执行的程序流
+  struct proc *p = myproc();
+  p->is_alarming = 0;
+  memmove(p->trapframe, p->alarm_trapframe, sizeof(struct trapframe));
+  return 0;
+}

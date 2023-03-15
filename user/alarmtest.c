@@ -4,7 +4,7 @@
 // but please make sure your kernel
 // modifications pass the original
 // versions of these tests.
-//
+///
 
 #include "kernel/param.h"
 #include "kernel/types.h"
@@ -179,13 +179,11 @@ test3()
 
   sigalarm(1, dummy_handler);
   printf("test3 start\n");
-
   asm volatile("lui a5, 0");
   asm volatile("addi a0, a5, 0xac" : : : "a0");
   for(int i = 0; i < 500000000; i++)
     ;
   asm volatile("mv %0, a0" : "=r" (a0) );
-
   if(a0 != 0xac)
     printf("test3 failed: register a0 changed\n");
   else
