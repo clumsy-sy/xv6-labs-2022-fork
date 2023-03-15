@@ -8,6 +8,15 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+// 物理页到数组中的 ID    
+#define PA2PGREF_ID(p) (((p)-KERNBASE)/PGSIZE)
+// MAX_PAGE最大页数
+#define MAX_PAGE PA2PGREF_ID(PHYSTOP)
+// 锁与索引数组
+struct spinlock pageReflock;
+int pageRef[MAX_PAGE];
+// 指向页对应位置的宏
+#define PAGEREF(p) (pageRef[PA2PGREF_ID(p)])
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -27,6 +36,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&pageReflock, "pageRef");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -51,6 +61,13 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  // 判断是否这个页面没有被引用了
+  acquire(&pageReflock);
+  if(--pageRef[PA2PGREF_ID((uint64)pa)] > 0) {
+    release(&pageReflock);
+    return;
+  }
+  release(&pageReflock);
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -76,7 +93,39 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r) {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    pageRef[PA2PGREF_ID((uint64)r)] = 1; // referance ++
+  }
   return (void*)r;
+}
+
+// 当引用已经小于等于 1 时，不创建和复制到新的物理页，而是直接返回该页本身
+void *kCOWcopy(void *pa) {
+  acquire(&pageReflock);
+
+  if(PAGEREF((uint64)pa) <= 1) { // 只有 1 个引用，无需复制
+    release(&pageReflock);
+    return pa;
+  }
+
+  // 分配新的内存页，并复制
+  uint64 newpage = (uint64)kalloc();
+  if(newpage == 0) {
+    release(&pageReflock);
+    return 0; // out of memory
+  }
+  memmove((void*)newpage, (void*)pa, PGSIZE);
+
+  // 旧页的引用减 1
+  PAGEREF((uint64)pa)--;
+
+  release(&pageReflock);
+  return (void*)newpage;
+}
+
+void pageRefAdd(uint64 pa){
+  acquire(&pageReflock);
+  ++PAGEREF(pa);
+  release(&pageReflock);
 }

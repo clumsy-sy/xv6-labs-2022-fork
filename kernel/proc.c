@@ -681,3 +681,11 @@ procdump(void)
     printf("\n");
   }
 }
+
+uint64 getProc_sz(struct proc* p) {
+  return p->sz;
+}
+
+pagetable_t getProc_PT(struct proc* p){
+  return p->pagetable;
+}
